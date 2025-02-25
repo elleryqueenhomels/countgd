@@ -1,0 +1,14 @@
+# python
+env/
+__pycache__
+.python-version
+*.py[od]
+
+# GroundingDINO build folder
+models/GroundingDINO/ops/build/
+
+# vim
+*.sw[op]
+
+# MacOS
+.DS_Store
