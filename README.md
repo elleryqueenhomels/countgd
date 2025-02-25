@@ -1,22 +1,5 @@
----
-title: CountGD_Multi-Modal_Open-World_Counting
-sdk: docker
-app_port: 7860
----
-# CountGD: Multi Modal Open World Counting Model
+This is a simplified repo for running and testing on Colab.
 
-To Run Locally, the best method is to use docker.
+The original repository: https://huggingface.co/spaces/nikigoli/countgd/tree/main/tools
 
-Make sure you have installed docker, nvidia-driver and nvidia container toolkit for the your platform.
-
-Then, you can run the app locally with the following command
-
-```bash
-docker run -it \
-    --name countgd \
-    -p 7860:7860 \
-    --platform=linux/amd64 \
-    --gpus all \
-	registry.hf.space/nikigoli-countgd:latest \
-    python app.py
-```
+Paper: Amini-Naieni et al. [CountGD: Multi-Modal Open-World Counting](https://arxiv.org/abs/2407.04619)
