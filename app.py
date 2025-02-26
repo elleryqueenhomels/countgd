@@ -1,33 +1,20 @@
-import spaces
-import gradio as gr
-import random
-import torch
-from PIL import Image
-import numpy as np
 import argparse
+import datasets.transforms as T
+import io
+import matplotlib.pyplot as plt
+import numpy as np
+import random
+import scipy.ndimage as ndimage
+import torch
+
+from PIL import Image
 from util.slconfig import SLConfig, DictAction
 from util.misc import nested_tensor_from_tensor_list
-import datasets.transforms as T
-import scipy.ndimage as ndimage
-import matplotlib.pyplot as plt
-# https://github.com/PhyscalX/gradio-image-prompter/tree/main/backend/gradio_image_prompter/templates/component
-import io
-from enum import Enum
-import os
-cwd = os.getcwd()
+
 # Suppress warnings to avoid overflowing the log.
 import warnings
 warnings.filterwarnings("ignore")
 
-from gradio_image_prompter import ImagePrompter
-
-
-
-class AppSteps(Enum):
-    JUST_TEXT = 1
-    TEXT_AND_EXEMPLARS = 2
-    JUST_EXEMPLARS = 3
-    FULL_APP = 4
 
 CONF_THRESH = 0.23
 
@@ -259,159 +246,3 @@ def predict(model, transform, image, text, prompts, device):
         
     keywords = ""
     return get_boxes_from_prediction(model_output, text, keywords)
-
-examples = [
-    ["strawberry.jpg", "strawberry", {"image": "strawberry.jpg"}],
-    ["strawberry.jpg", "blueberry", {"image": "strawberry.jpg"}],
-    ["bird-1.JPG", "bird", {"image": "bird-2.JPG"}],
-    ["fish.jpg", "fish", {"image": "fish.jpg"}],
-    ["women.jpg", "girl", {"image": "women.jpg"}],
-    ["women.jpg", "boy", {"image": "women.jpg"}],
-    ["balloon.jpg", "hot air balloon", {"image": "balloon.jpg"}],
-    ["deer.jpg", "deer", {"image": "deer.jpg"}],
-    ["apple.jpg", "apple", {"image": "apple.jpg"}],
-    ["egg.jpg", "egg", {"image": "egg.jpg"}],
-    ["stamp.jpg", "stamp", {"image": "stamp.jpg"}],
-    ["green-pea.jpg", "green pea", {"image": "green-pea.jpg"}],
-    ["lego.jpg", "lego", {"image": "lego.jpg"}]
-]
-
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser("Counting Application", parents=[get_args_parser()])
-    args = parser.parse_args()
-    device = get_device()
-    model, transform = build_model_and_transforms(args)
-    model = model.to(device)
-
-    def _predict(image, text, prompts):
-        return predict(model, transform, image, text, prompts, device)
-
-
-    @spaces.GPU(duration=120)
-    def count(image, text, prompts, state):
-        if prompts is None:
-            prompts = {"image": image, "points": []}
-        
-        boxes, _ = _predict(image, text, prompts)
-        predicted_count = len(boxes)
-        output_img = generate_heatmap(image, boxes)
-
-        num_exemplars = len(get_box_inputs(prompts["points"]))
-        out_label = generate_output_label(text, num_exemplars)
-
-        if AppSteps.TEXT_AND_EXEMPLARS not in state:
-            exemplar_image = ImagePrompter(type='pil', label='Visual Exemplar Image', value=prompts, interactive=True, visible=True)
-            new_submit_btn = gr.Button("Count", variant="primary", interactive=False)
-            state = [AppSteps.JUST_TEXT, AppSteps.TEXT_AND_EXEMPLARS]
-            main_instructions_comp = gr.Markdown(visible=False)
-            step_3 = gr.Tab(visible=False)
-        elif AppSteps.FULL_APP not in state:
-            exemplar_image = ImagePrompter(type='pil', label='Visual Exemplar Image', value=prompts, interactive=True, visible=True)
-            new_submit_btn = submit_btn
-            state = [AppSteps.JUST_TEXT, AppSteps.TEXT_AND_EXEMPLARS, AppSteps.FULL_APP]
-            main_instructions_comp = gr.Markdown(visible=True)
-            step_3 = gr.Tab(visible=True)
-        else:
-            exemplar_image = ImagePrompter(type='pil', label='Visual Exemplar Image', value=prompts, interactive=True, visible=True)
-            new_submit_btn = submit_btn
-            main_instructions_comp = gr.Markdown(visible=True)
-            step_3 = gr.Tab(visible=True)
-
-        return (gr.Image(output_img, visible=True, label=out_label, show_label=True), gr.Number(label="Predicted Count", visible=True, value=predicted_count), new_submit_btn, gr.Tab(visible=True), step_3, state)
-
-    @spaces.GPU
-    def count_main(image, text, prompts):
-        if prompts is None:
-            prompts = {"image": image, "points": []}
-        boxes, _ = _predict(image, text, prompts)
-        predicted_count = len(boxes)
-        output_img = generate_heatmap(image, boxes)
-        num_exemplars = len(get_box_inputs(prompts["points"]))
-        out_label = generate_output_label(text, num_exemplars)
-
-        return (gr.Image(output_img, visible=True, label=out_label, show_label=True), gr.Number(label="Predicted Count", visible=True, value=predicted_count))
-
-    def remove_label(image):
-        return gr.Image(show_label=False)
-
-    def check_submit_btn(exemplar_image_prompts, state):
-        if AppSteps.TEXT_AND_EXEMPLARS not in state or len(state) == 3:
-            return gr.Button("Count", variant="primary", interactive=True)
-        elif exemplar_image_prompts is None:
-            return gr.Button("Count", variant="primary", interactive=False)
-        elif len(get_box_inputs(exemplar_image_prompts["points"])) > 0:
-            return gr.Button("Count", variant="primary", interactive=True)
-        else:
-            return gr.Button("Count", variant="primary", interactive=False)
-
-    exemplar_img_drawing_instructions_part_1 = '<p><strong>Congrats, you have counted the strawberries!</strong> You can also draw a box around the object you want to count. <strong>Click and drag the mouse on the image below to draw a box around one of the strawberries.</strong> You can click the back button in the top right of the image to delete the box and try again.<img src="file/button-legend.jpg" width="750"></p>'
-    exemplar_img_drawing_instructions_part_2 = '<p>The boxes you draw are called \"visual exemplars,\" image examples of what you want the model to count. You can add more boxes around more examples of strawberries in the image above to increase the accuracy of the predicted count. You can also use strawberries from a different image to specify the object to count by uploading or pasting a new image above and drawing boxes around strawberries in it.</p>'
-    instructions_main = """
-    # How to Use the App
-    As shown earlier, there are 3 ways to specify the object to count: (1) with text only, (2) with text and any number of boxes (i.e., "visual exemplars") around example objects, and (3) with visual exemplars only. What is being used is indicated in the top left of the output image. How to try each case is detailed below.
-    <ol>
-    <li><strong>Text Only: </strong> Only provide text describing the object to count in the textbox titled "What would you like to count?" Delete all boxes drawn on the visual exemplar image.</li>
-    <li><strong>Text + Visual Exemplars: </strong> Provide text describing the object to count in the textbox titled "What would you like to count?" and draw at least one box around an example object in the visual exemplar image.</li>
-    <li><strong>Visual Exemplars Only: </strong> Remove all text in the textbox titled "What would you like to count?" and draw at least one box around an example object in the visual exemplar image.</li>
-    </ol>
-    ## Click on the "App" tab at the top of the screen to exit the tutorial and start using the main app!
-    """
-
-    with gr.Blocks(title="CountGD: Multi-Modal Open-World Counting", theme="soft", head="""<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=1">""") as demo:
-        state = gr.State(value=[AppSteps.JUST_TEXT])
-        with gr.Tab("Tutorial"):
-            with gr.Row():
-                with gr.Column():
-                    with gr.Tab("Step 3", visible=False) as step_3:
-                        main_instructions = gr.Markdown(instructions_main)
-                    with gr.Tab("Step 2", visible=False) as step_2:
-                        gr.Markdown(exemplar_img_drawing_instructions_part_1)
-                        exemplar_image = ImagePrompter(type='pil', label='Visual Exemplar Image', show_label=True, value={"image": "strawberry.jpg", "points": []}, interactive=True)
-                        with gr.Accordion("Open for Further Information", open=False):
-                            gr.Markdown(exemplar_img_drawing_instructions_part_2)
-                    with gr.Tab("Step 1", visible=True) as step_1:
-                        input_image = gr.Image(type='pil', label='Input Image', show_label='True', value="strawberry.jpg", interactive=False)
-                        gr.Markdown('# Click "Count" to count the strawberries.')
-
-                with gr.Column():
-                    with gr.Tab("Output Image"):
-                        detected_instances = gr.Image(label="Detected Instances", show_label='True', interactive=False, visible=True)
-
-            with gr.Row():
-                input_text = gr.Textbox(label="What would you like to count?", value="strawberry", interactive=True)
-                pred_count = gr.Number(label="Predicted Count", visible=False)
-            submit_btn = gr.Button("Count", variant="primary", interactive=True)
-
-            submit_btn.click(fn=remove_label, inputs=[detected_instances], outputs=[detected_instances]).then(fn=count, inputs=[input_image, input_text, exemplar_image, state], outputs=[detected_instances, pred_count, submit_btn, step_2, step_3, state])
-            exemplar_image.change(check_submit_btn, inputs=[exemplar_image, state], outputs=[submit_btn])
-        with gr.Tab("App", visible=True) as main_app:
-
-            gr.Markdown(
-                """
-                # <center>CountGD: Multi-Modal Open-World Counting
-                <center><h3>Count objects with text, visual exemplars, or both together.</h3>
-                <h3>Scroll down to try more examples</h3>
-                <h3><a href='https://arxiv.org/abs/2407.04619' target='_blank' rel='noopener'>[paper]</a>
-                    <a href='https://github.com/niki-amini-naieni/CountGD/' target='_blank' rel='noopener'>[code]</a></h3>
-                Limitation: this app does not support fine-grained counting based on attributes or visual grounding inputs yet. Note: if the exemplar and text conflict each other, both will be counted.</center>
-                """
-                )
-
-            with gr.Row():
-                with gr.Column():
-                    input_image_main = gr.Image(type='pil', label='Input Image', show_label='True', value="strawberry.jpg", interactive=True)
-                    input_text_main = gr.Textbox(label="What would you like to count?", placeholder="", value="strawberry")
-                    exemplar_image_main = ImagePrompter(type='pil', label='Visual Exemplar Image', show_label=True, value={"image": "strawberry.jpg", "points": []}, interactive=True)
-                with gr.Column():
-                    detected_instances_main = gr.Image(label="Detected Instances", show_label='True', interactive=False)
-                    pred_count_main = gr.Number(label="Predicted Count")
-                    submit_btn_main = gr.Button("Count", variant="primary")
-                    clear_btn_main = gr.ClearButton(variant="secondary")
-            gr.Examples(label="Examples: click on a row to load the example. Add visual exemplars by drawing boxes on the loaded \"Visual Exemplar Image.\"", examples=examples, inputs=[input_image_main, input_text_main, exemplar_image_main])
-            submit_btn_main.click(fn=remove_label, inputs=[detected_instances_main], outputs=[detected_instances_main]).then(fn=count_main, inputs=[input_image_main, input_text_main, exemplar_image_main], outputs=[detected_instances_main, pred_count_main])
-            clear_btn_main.add([input_image_main, input_text_main, exemplar_image_main, detected_instances_main, pred_count_main])
-
-
-    demo.queue().launch(allowed_paths=['back-icon.jpg', 'paste-icon.jpg', 'upload-icon.jpg', 'button-legend.jpg'])
